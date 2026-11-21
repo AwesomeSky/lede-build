@@ -1,0 +1,8 @@
+# 构建中间产物
+lede/
+out/
+*.log
+
+# Windows
+Thumbs.db
+desktop.ini
