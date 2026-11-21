@@ -18,11 +18,13 @@ on:
         options:
           - slim
           - full
-  push:
-    paths:
-      - 'diy.sh'
-      - 'configs/**'
-      - '.github/workflows/build.yml'
+  # 故意不加 push 触发：改配置不应该自动开始一次 4 小时的编译。
+  # 需要自动构建时再取消下面注释。
+  # push:
+  #   paths:
+  #     - 'diy.sh'
+  #     - 'configs/**'
+  #     - '.github/workflows/build.yml'
 
 jobs:
   build:
