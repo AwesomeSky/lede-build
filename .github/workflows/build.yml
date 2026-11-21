@@ -1,24 +1,33 @@
 name: Build LEDE x86-64
 
-# 说明：
-#   - 公开仓库的 Actions 分钟数免费无限；私有仓库每月 2000 分钟，
-#     一次 x86-64 全量编译在 2 核 runner 上约 150–250 分钟，很容易超。
-#   - runner 只有 14GB 可用空间，OpenWrt 全量编译要 25GB+，
-#     所以第一步必须把预装的 Android SDK / .NET / Haskell 之类删掉。
-#   - 产物在 Actions 页面底部 Artifacts 里下载。
+# 两套配置，手动触发时选：
+#   slim —— 精简版（约 30 个包，一个代理栈），2 核 runner 约 3-4 小时，大概率能编完
+#   full —— 完整版（configs/full.config，572 个包），含 docker/rustdesk/openclash 等，
+#           2 核上极易超过 GitHub 的 6 小时单 job 上限；更适合本地 16 核编译
+#
+# 公开仓库的 Actions 分钟数免费无限。
 
 on:
-  workflow_dispatch:          # 手动触发
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: '配置：slim 精简（推荐） / full 完整 572 包（2 核很可能超时）'
+        required: true
+        default: slim
+        type: choice
+        options:
+          - slim
+          - full
   push:
     paths:
-      - '.config'             # 改了配置自动重编
       - 'diy.sh'
+      - 'configs/**'
       - '.github/workflows/build.yml'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 350      # GitHub 单 job 上限 6 小时，留点余量
+    timeout-minutes: 350
 
     steps:
       - name: Checkout
@@ -47,10 +56,14 @@ jobs:
             autoconf automake libtool pkg-config
 
       # ---------- 3. 拉源码 ----------
+      # 注意：feeds 用上游原始的 feeds.conf.default（含 helloworld），
+      # 不要用本地改过的那份（那里面是 src-link /mnt/g/... 的本地路径）。
       - name: Clone LEDE
         run: |
           git clone --depth 1 https://github.com/coolsnowwolf/lede lede
           cd lede && git log -1 --pretty='%h %ci %s'
+          echo "--- feeds ---"
+          cat feeds.conf.default
 
       # ---------- 4. feeds ----------
       - name: Update and install feeds
@@ -59,31 +72,32 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ---------- 5. 应用 .config 与 diy.sh ----------
+      # ---------- 5. 应用配置 ----------
       - name: Apply config
         run: |
           cd lede
-          if [ -f ../.config ]; then
-            cp ../.config .config
-            echo "using repo .config"
+          V="${{ github.event.inputs.variant }}"
+          if [ -z "$V" ]; then V=slim; fi
+          echo "variant = $V"
+          if [ "$V" = "full" ]; then
+            cp ../configs/full.config .config
+            echo "::warning::full 配置 572 个包，2 核 runner 很可能超过 6 小时上限"
           else
-            echo "no .config in repo -> make defconfig (x86-64 defaults)"
-          fi
-          if [ -f ../diy.sh ]; then
-            cp ../diy.sh . && bash diy.sh || true
+            bash ../diy.sh
           fi
           make defconfig
           echo "--- target ---"
-          grep -E '^CONFIG_TARGET_(x86|BOARD|SUBTARGET)' .config | head
+          grep -E '^CONFIG_TARGET_(x86|ARCH_PACKAGES)' .config | head
+          echo "enabled packages: $(grep -c '^CONFIG_PACKAGE_.*=y$' .config)"
 
-      # ---------- 6. 下载源码包（可缓存，重编快很多） ----------
+      # ---------- 6. 下载源码包（缓存，重编快很多） ----------
       - name: Cache download directory
         uses: actions/cache@v4
         with:
           path: lede/dl
-          key: dl-${{ hashFiles('.config') }}-${{ github.run_id }}
+          key: dl-${{ github.event.inputs.variant }}-${{ hashFiles('diy.sh', 'configs/**') }}
           restore-keys: |
-            dl-${{ hashFiles('.config') }}-
+            dl-${{ github.event.inputs.variant }}-
             dl-
 
       - name: Download package sources
@@ -109,7 +123,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: lede-x86-64-${{ github.run_number }}
+          name: lede-x86-64-${{ github.event.inputs.variant || 'slim' }}-${{ github.run_number }}
           path: out/*
           retention-days: 14
           if-no-files-found: error
