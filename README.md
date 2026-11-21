@@ -42,6 +42,11 @@ LEDE_DIR=/data/lede ./build.sh   # 指定源码目录（默认 ./lede，可复�
 （含 `helloworld` 源）→ 应用配置 → `make download` → `make -jN` → 列产物。
 并行编译没出镜像时会自动回退 `-j1 V=s` 把真实报错打出来。
 
+> **不在本机 Windows、也不在 MS-03 上编译。**
+> 本机（Windows + WSL）编译慢且容易失败；MS-03 专职跑 PVE 服务
+> （HAOS / OpenWrt / homeERP / vision），编译放一台独立服务器，
+> 避免抢 CPU 和内存影响在线服务。
+
 **以 root 运行时**脚本会自动建一个 `builder` 用户来编（OpenWrt buildroot 拒绝 root）。
 
 **产物**：`lede/bin/targets/x86/64/*combined*.img.gz`
